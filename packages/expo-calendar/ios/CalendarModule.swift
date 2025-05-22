@@ -580,31 +580,45 @@ public class CalendarModule: Module {
   }
 
   private func getEvent(with id: String, startDate: Date?) -> EKEvent? {
+    // 기본 이벤트 조회
     guard let firstEvent = eventStore.calendarItem(withIdentifier: id) as? EKEvent else {
       return nil
     }
 
+    // startDate가 없으면 기본 이벤트 반환
     guard let startDate else {
       return firstEvent
     }
-
-    guard let firstEventStart = firstEvent.startDate, firstEventStart.compare(startDate) == .orderedSame else {
+    
+    // 첫 이벤트의 시작 시간이 요청된 시간과 같으면 그대로 반환
+    // (문제된 guard 조건을 if로 변경하여 일치하는 경우만 처리)
+    if let firstEventStart = firstEvent.startDate, 
+       Calendar.current.isDate(firstEventStart, equalTo: startDate, toGranularity: .second) {
       return firstEvent
     }
-
-    let endDate = startDate.addingTimeInterval(2_592_000)
+    
+    // 검색 범위 - 요청된 날짜 주변 적절한 기간
+    let searchStart = Calendar.current.date(byAdding: .day, value: -1, to: startDate) ?? startDate
+    let searchEnd = Calendar.current.date(byAdding: .day, value: 1, to: startDate) ?? 
+                    startDate.addingTimeInterval(86400) // 1일
+    
+    // 반복 이벤트 검색
     let events = eventStore.events(
-      matching: eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: [firstEvent.calendar])
+      matching: eventStore.predicateForEvents(withStart: searchStart, 
+                                             end: searchEnd, 
+                                             calendars: [firstEvent.calendar])
     )
-
-    for event in events {
-      if event.calendarItemIdentifier != id {
-        break
-      }
-      if let eventStart = event.startDate, eventStart.compare(startDate) == .orderedSame {
+    
+    // ID가 일치하는 모든 이벤트 중에서 startDate와 일치하는 것 찾기
+    for event in events where event.calendarItemIdentifier == id {
+      if let eventStart = event.startDate, 
+         Calendar.current.isDate(eventStart, equalTo: startDate, toGranularity: .second) {
         return event
       }
     }
+    
+    // 일치하는 이벤트가 없으면 nil 반환
+    // (구현에 따라 firstEvent를 반환할 수도 있음)
     return nil
   }
 
